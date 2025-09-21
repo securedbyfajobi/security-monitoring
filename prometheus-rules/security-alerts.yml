@@ -1,0 +1,240 @@
+groups:
+- name: security-alerts
+  rules:
+  # Authentication and Access Control
+  - alert: HighFailedLoginAttempts
+    expr: increase(auth_failed_attempts_total[5m]) > 10
+    for: 2m
+    labels:
+      severity: warning
+      category: authentication
+    annotations:
+      summary: "High number of failed login attempts detected"
+      description: "{{ $value }} failed login attempts in the last 5 minutes from {{ $labels.source_ip }}"
+
+  - alert: RootAccountUsage
+    expr: increase(sudo_commands_total[5m]) > 0
+    for: 0m
+    labels:
+      severity: critical
+      category: privilege_escalation
+    annotations:
+      summary: "Root account usage detected"
+      description: "User {{ $labels.user }} executed sudo commands on {{ $labels.instance }}"
+
+  - alert: UnauthorizedAPIAccess
+    expr: increase(http_requests_total{code=~"401|403"}[5m]) > 20
+    for: 3m
+    labels:
+      severity: warning
+      category: access_control
+    annotations:
+      summary: "High number of unauthorized API access attempts"
+      description: "{{ $value }} unauthorized access attempts to {{ $labels.endpoint }}"
+
+  # Network Security
+  - alert: SuspiciousNetworkTraffic
+    expr: increase(network_bytes_total[1m]) > 100000000
+    for: 2m
+    labels:
+      severity: warning
+      category: network_anomaly
+    annotations:
+      summary: "Unusual network traffic detected"
+      description: "{{ $value }} bytes transferred in 1 minute on {{ $labels.instance }}"
+
+  - alert: PortScanDetected
+    expr: increase(port_scan_attempts_total[5m]) > 50
+    for: 1m
+    labels:
+      severity: critical
+      category: network_attack
+    annotations:
+      summary: "Port scan detected"
+      description: "{{ $value }} port scan attempts from {{ $labels.source_ip }}"
+
+  - alert: UnusualOutboundConnections
+    expr: increase(outbound_connections_total[5m]) > 100
+    for: 5m
+    labels:
+      severity: warning
+      category: data_exfiltration
+    annotations:
+      summary: "Unusual outbound network connections"
+      description: "{{ $value }} outbound connections from {{ $labels.instance }}"
+
+  # Container and Kubernetes Security
+  - alert: PrivilegedContainerStarted
+    expr: increase(container_started_total{privileged="true"}[5m]) > 0
+    for: 0m
+    labels:
+      severity: critical
+      category: container_security
+    annotations:
+      summary: "Privileged container started"
+      description: "Privileged container {{ $labels.container }} started on {{ $labels.node }}"
+
+  - alert: ContainerEscapeAttempt
+    expr: increase(container_escape_attempts_total[5m]) > 0
+    for: 0m
+    labels:
+      severity: critical
+      category: container_security
+    annotations:
+      summary: "Container escape attempt detected"
+      description: "Container escape attempt from {{ $labels.container }} on {{ $labels.node }}"
+
+  - alert: UnauthorizedKubernetesAPIAccess
+    expr: increase(kubernetes_api_requests_total{code=~"401|403"}[5m]) > 10
+    for: 2m
+    labels:
+      severity: warning
+      category: kubernetes_security
+    annotations:
+      summary: "Unauthorized Kubernetes API access"
+      description: "{{ $value }} unauthorized API requests from {{ $labels.source_ip }}"
+
+  # File System and Process Security
+  - alert: SuspiciousFileModification
+    expr: increase(file_modifications_total{path=~"/etc/.*|/usr/bin/.*|/usr/sbin/.*"}[5m]) > 5
+    for: 1m
+    labels:
+      severity: critical
+      category: file_integrity
+    annotations:
+      summary: "Suspicious system file modifications"
+      description: "{{ $value }} modifications to critical system files on {{ $labels.instance }}"
+
+  - alert: UnauthorizedProcessExecution
+    expr: increase(process_executions_total{user="root",command=~".*(wget|curl|nc|netcat).*"}[5m]) > 0
+    for: 0m
+    labels:
+      severity: critical
+      category: process_security
+    annotations:
+      summary: "Unauthorized process execution detected"
+      description: "Suspicious command {{ $labels.command }} executed by {{ $labels.user }}"
+
+  - alert: CryptominingActivity
+    expr: avg_over_time(cpu_usage_percent[10m]) > 90 and on(instance) increase(network_connections_total{port="4444"}[5m]) > 0
+    for: 5m
+    labels:
+      severity: critical
+      category: malware
+    annotations:
+      summary: "Potential cryptocurrency mining activity"
+      description: "High CPU usage with suspicious network activity on {{ $labels.instance }}"
+
+  # Data Security
+  - alert: UnusualDataAccess
+    expr: increase(database_queries_total[5m]) > 1000
+    for: 3m
+    labels:
+      severity: warning
+      category: data_access
+    annotations:
+      summary: "Unusual database access pattern"
+      description: "{{ $value }} database queries in 5 minutes from {{ $labels.source }}"
+
+  - alert: LargeDataTransfer
+    expr: increase(data_transfer_bytes_total[5m]) > 1000000000
+    for: 2m
+    labels:
+      severity: critical
+      category: data_exfiltration
+    annotations:
+      summary: "Large data transfer detected"
+      description: "{{ $value }} bytes transferred from {{ $labels.instance }}"
+
+  - alert: SensitiveDataAccess
+    expr: increase(sensitive_data_access_total[5m]) > 50
+    for: 1m
+    labels:
+      severity: critical
+      category: data_protection
+    annotations:
+      summary: "High volume sensitive data access"
+      description: "{{ $value }} accesses to sensitive data by {{ $labels.user }}"
+
+  # Infrastructure Security
+  - alert: ConfigurationDrift
+    expr: configuration_drift_detected == 1
+    for: 0m
+    labels:
+      severity: warning
+      category: configuration_management
+    annotations:
+      summary: "Configuration drift detected"
+      description: "System configuration drift detected on {{ $labels.instance }}"
+
+  - alert: UnauthorizedSSHConnection
+    expr: increase(ssh_connections_total{status="success"}[5m]) > 10
+    for: 2m
+    labels:
+      severity: warning
+      category: remote_access
+    annotations:
+      summary: "High number of SSH connections"
+      description: "{{ $value }} SSH connections to {{ $labels.instance }}"
+
+  - alert: WeakSSLCipherSuite
+    expr: ssl_weak_ciphers_total > 0
+    for: 0m
+    labels:
+      severity: warning
+      category: encryption
+    annotations:
+      summary: "Weak SSL cipher suite detected"
+      description: "Weak SSL cipher suites in use on {{ $labels.instance }}"
+
+  # Compliance and Audit
+  - alert: AuditLogTampering
+    expr: increase(audit_log_tampering_attempts_total[5m]) > 0
+    for: 0m
+    labels:
+      severity: critical
+      category: audit_security
+    annotations:
+      summary: "Audit log tampering attempt detected"
+      description: "Attempt to tamper with audit logs on {{ $labels.instance }}"
+
+  - alert: ComplianceViolation
+    expr: compliance_score < 0.95
+    for: 5m
+    labels:
+      severity: warning
+      category: compliance
+    annotations:
+      summary: "Compliance score below threshold"
+      description: "Compliance score {{ $value }} below 95% on {{ $labels.instance }}"
+
+  # Application Security
+  - alert: SQLInjectionAttempt
+    expr: increase(sql_injection_attempts_total[5m]) > 0
+    for: 0m
+    labels:
+      severity: critical
+      category: application_security
+    annotations:
+      summary: "SQL injection attempt detected"
+      description: "SQL injection attempt from {{ $labels.source_ip }} on {{ $labels.endpoint }}"
+
+  - alert: XSSAttempt
+    expr: increase(xss_attempts_total[5m]) > 0
+    for: 0m
+    labels:
+      severity: critical
+      category: application_security
+    annotations:
+      summary: "Cross-site scripting attempt detected"
+      description: "XSS attempt from {{ $labels.source_ip }} on {{ $labels.endpoint }}"
+
+  - alert: CommandInjectionAttempt
+    expr: increase(command_injection_attempts_total[5m]) > 0
+    for: 0m
+    labels:
+      severity: critical
+      category: application_security
+    annotations:
+      summary: "Command injection attempt detected"
+      description: "Command injection attempt from {{ $labels.source_ip }}"
