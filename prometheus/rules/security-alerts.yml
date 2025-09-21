@@ -1,0 +1,240 @@
+groups:
+  - name: security.critical
+    interval: 30s
+    rules:
+      # Authentication and Access Control
+      - alert: HighFailedLoginAttempts
+        expr: increase(auth_failed_attempts_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          category: authentication
+          mitre_tactic: "TA0006" # Credential Access
+        annotations:
+          summary: "High number of failed login attempts detected"
+          description: "{{ $value }} failed login attempts in the last 5 minutes from {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/failed-logins"
+          remediation: "Investigate potential brute force attack and consider IP blocking"
+
+      - alert: PrivilegeEscalationAttempt
+        expr: increase(privilege_escalation_attempts_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: privilege_escalation
+          mitre_tactic: "TA0004" # Privilege Escalation
+        annotations:
+          summary: "Privilege escalation attempt detected"
+          description: "Privilege escalation attempt detected on {{ $labels.instance }} by user {{ $labels.user }}"
+          runbook_url: "https://security-playbooks.example.com/privilege-escalation"
+          remediation: "Immediately investigate user activity and review access controls"
+
+      # Network Security
+      - alert: SuspiciousNetworkTraffic
+        expr: rate(network_bytes_total[5m]) > 100000000  # 100MB/s
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+          mitre_tactic: "TA0011" # Command and Control
+        annotations:
+          summary: "Unusual network traffic volume detected"
+          description: "High network traffic ({{ humanize $value }} bytes/sec) detected on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/network-anomaly"
+          remediation: "Analyze traffic patterns and investigate potential data exfiltration"
+
+      - alert: UnauthorizedPortAccess
+        expr: increase(port_scan_attempts_total[5m]) > 5
+        for: 1m
+        labels:
+          severity: high
+          category: network
+          mitre_tactic: "TA0007" # Discovery
+        annotations:
+          summary: "Port scanning activity detected"
+          description: "{{ $value }} port scan attempts detected from {{ $labels.source_ip }}"
+          runbook_url: "https://security-playbooks.example.com/port-scanning"
+          remediation: "Block source IP and investigate scanning patterns"
+
+      # Malware and File Integrity
+      - alert: MalwareDetected
+        expr: increase(malware_detections_total[1m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: malware
+          mitre_tactic: "TA0002" # Execution
+        annotations:
+          summary: "Malware detected on system"
+          description: "Malware '{{ $labels.malware_type }}' detected on {{ $labels.instance }} in file {{ $labels.file_path }}"
+          runbook_url: "https://security-playbooks.example.com/malware-response"
+          remediation: "Isolate system immediately and begin incident response procedures"
+
+      - alert: FileIntegrityViolation
+        expr: increase(file_integrity_violations_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: high
+          category: integrity
+          mitre_tactic: "TA0005" # Defense Evasion
+        annotations:
+          summary: "Critical file modification detected"
+          description: "Unauthorized modification of {{ $labels.file_path }} on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/file-integrity"
+          remediation: "Investigate file changes and verify system integrity"
+
+      # Data Security
+      - alert: SensitiveDataExfiltration
+        expr: increase(sensitive_data_access_total[10m]) > 100
+        for: 5m
+        labels:
+          severity: critical
+          category: data_loss
+          mitre_tactic: "TA0010" # Exfiltration
+        annotations:
+          summary: "Potential sensitive data exfiltration detected"
+          description: "{{ $value }} sensitive data access events in 10 minutes on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/data-exfiltration"
+          remediation: "Immediately investigate data access patterns and implement data loss prevention measures"
+
+      - alert: UnencryptedDataTransmission
+        expr: increase(unencrypted_transmissions_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: high
+          category: encryption
+          mitre_tactic: "TA0009" # Collection
+        annotations:
+          summary: "Unencrypted sensitive data transmission detected"
+          description: "Unencrypted transmission of sensitive data detected from {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/encryption-violation"
+          remediation: "Enforce encryption policies and investigate data handling procedures"
+
+      # System Security
+      - alert: SystemCompromiseIndicators
+        expr: increase(system_compromise_indicators_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: compromise
+          mitre_tactic: "TA0003" # Persistence
+        annotations:
+          summary: "System compromise indicators detected"
+          description: "Compromise indicator '{{ $labels.indicator_type }}' detected on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/system-compromise"
+          remediation: "Initiate full incident response and consider system isolation"
+
+      - alert: CriticalVulnerabilityExploitation
+        expr: increase(vulnerability_exploits_total[1m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: vulnerability
+          mitre_tactic: "TA0001" # Initial Access
+        annotations:
+          summary: "Critical vulnerability exploitation detected"
+          description: "Exploitation of {{ $labels.cve_id }} detected on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/vulnerability-exploit"
+          remediation: "Apply emergency patches and isolate affected systems"
+
+  - name: security.compliance
+    interval: 60s
+    rules:
+      # Compliance Monitoring
+      - alert: ComplianceViolation
+        expr: compliance_control_failures_total > 0
+        for: 5m
+        labels:
+          severity: high
+          category: compliance
+          framework: "{{ $labels.compliance_framework }}"
+        annotations:
+          summary: "Compliance control failure detected"
+          description: "Control {{ $labels.control_id }} failed for {{ $labels.compliance_framework }} on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/compliance-violation"
+          remediation: "Review and remediate compliance control failure"
+
+      - alert: AuditLogTampering
+        expr: increase(audit_log_integrity_violations_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: audit
+          mitre_tactic: "TA0005" # Defense Evasion
+        annotations:
+          summary: "Audit log tampering detected"
+          description: "Audit log integrity violation detected on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/audit-tampering"
+          remediation: "Investigate log tampering and secure audit infrastructure"
+
+      - alert: SecurityControlDisabled
+        expr: increase(security_control_disabled_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: high
+          category: controls
+          mitre_tactic: "TA0005" # Defense Evasion
+        annotations:
+          summary: "Security control disabled"
+          description: "Security control '{{ $labels.control_name }}' disabled on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/control-disabled"
+          remediation: "Re-enable security control and investigate unauthorized changes"
+
+  - name: security.availability
+    interval: 60s
+    rules:
+      # Service Availability and DDoS
+      - alert: DDoSAttackDetected
+        expr: rate(http_requests_total[1m]) > 1000
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+          mitre_tactic: "TA0040" # Impact
+        annotations:
+          summary: "Potential DDoS attack detected"
+          description: "High request rate ({{ $value }} req/sec) detected on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/ddos-response"
+          remediation: "Activate DDoS mitigation and analyze traffic patterns"
+
+      - alert: SecurityServiceDown
+        expr: up{job=~".*security.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Security service unavailable"
+          description: "Security service {{ $labels.job }} is down on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/service-down"
+          remediation: "Restore security service immediately and investigate cause"
+
+  - name: security.threat_intelligence
+    interval: 300s
+    rules:
+      # Threat Intelligence
+      - alert: KnownBadIPAccess
+        expr: increase(known_bad_ip_connections_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: high
+          category: threat_intelligence
+          mitre_tactic: "TA0011" # Command and Control
+        annotations:
+          summary: "Connection to known malicious IP detected"
+          description: "Connection to known bad IP {{ $labels.bad_ip }} from {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/malicious-ip"
+          remediation: "Block IP address and investigate potential compromise"
+
+      - alert: IOCDetected
+        expr: increase(ioc_detections_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: high
+          category: threat_intelligence
+          ioc_type: "{{ $labels.ioc_type }}"
+        annotations:
+          summary: "Indicator of Compromise detected"
+          description: "IOC '{{ $labels.ioc_value }}' of type {{ $labels.ioc_type }} detected on {{ $labels.instance }}"
+          runbook_url: "https://security-playbooks.example.com/ioc-response"
+          remediation: "Investigate IOC context and implement containment measures"

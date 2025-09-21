@@ -1,0 +1,449 @@
+---
+# Security Incident Response Playbook
+# Automated response for general security incidents
+
+- name: Security Incident Response
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    incident_id: "{{ incident_id | default('INC-' + ansible_date_time.epoch) }}"
+    incident_type: "{{ incident_type | default('unknown') }}"
+    severity: "{{ severity | default('medium') }}"
+    affected_systems: "{{ affected_systems | default([]) }}"
+    containment_required: "{{ containment_required | default(true) }}"
+    evidence_collection: "{{ evidence_collection | default(true) }}"
+    notification_required: "{{ notification_required | default(true) }}"
+
+    # Communication settings
+    slack_webhook: "{{ vault_slack_webhook | default('') }}"
+    email_recipients: "{{ vault_email_recipients | default([]) }}"
+
+    # Directories and paths
+    incident_dir: "/var/log/incidents/{{ incident_id }}"
+    evidence_dir: "{{ incident_dir }}/evidence"
+    logs_dir: "{{ incident_dir }}/logs"
+    reports_dir: "{{ incident_dir }}/reports"
+
+  pre_tasks:
+    - name: Validate incident parameters
+      assert:
+        that:
+          - incident_type in ['malware', 'data_breach', 'unauthorized_access', 'ddos', 'phishing', 'insider_threat', 'unknown']
+          - severity in ['low', 'medium', 'high', 'critical']
+        fail_msg: "Invalid incident parameters provided"
+
+    - name: Create incident directory structure
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0750'
+        owner: security
+        group: security
+      loop:
+        - "{{ incident_dir }}"
+        - "{{ evidence_dir }}"
+        - "{{ logs_dir }}"
+        - "{{ reports_dir }}"
+      become: yes
+
+    - name: Log incident initiation
+      copy:
+        content: |
+          SECURITY INCIDENT RESPONSE INITIATED
+          ===================================
+          Incident ID: {{ incident_id }}
+          Type: {{ incident_type }}
+          Severity: {{ severity }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Initiated by: {{ ansible_user_id }}
+          Affected Systems: {{ affected_systems | join(', ') }}
+
+          Response Status: ACTIVE
+        dest: "{{ incident_dir }}/incident_log.txt"
+        mode: '0640'
+      become: yes
+
+  tasks:
+    # Phase 1: Preparation and Initial Response
+    - name: Phase 1 - Initial Response
+      block:
+        - name: Send initial incident notification
+          uri:
+            url: "{{ slack_webhook }}"
+            method: POST
+            body_format: json
+            body:
+              text: |
+                🚨 SECURITY INCIDENT DETECTED 🚨
+                Incident ID: {{ incident_id }}
+                Type: {{ incident_type }}
+                Severity: {{ severity }}
+                Status: Response initiated
+                Time: {{ ansible_date_time.iso8601 }}
+            status_code: 200
+          when:
+            - notification_required | bool
+            - slack_webhook != ""
+          ignore_errors: yes
+
+        - name: Create incident response team notification
+          mail:
+            to: "{{ email_recipients }}"
+            subject: "[SECURITY ALERT] Incident {{ incident_id }} - {{ incident_type }}"
+            body: |
+              Security Incident Response Activated
+
+              Incident Details:
+              - ID: {{ incident_id }}
+              - Type: {{ incident_type }}
+              - Severity: {{ severity }}
+              - Detection Time: {{ ansible_date_time.iso8601 }}
+              - Affected Systems: {{ affected_systems | join(', ') }}
+
+              Immediate Actions Required:
+              1. Review incident details in {{ incident_dir }}
+              2. Verify containment measures
+              3. Begin evidence collection
+              4. Coordinate response activities
+
+              Incident Response Platform: https://security-portal.example.com/incidents/{{ incident_id }}
+          when:
+            - notification_required | bool
+            - email_recipients | length > 0
+          ignore_errors: yes
+
+    # Phase 2: Identification and Analysis
+    - name: Phase 2 - Identification and Analysis
+      block:
+        - name: Collect system information from affected hosts
+          setup:
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          register: system_facts
+          when: affected_systems | length > 0
+
+        - name: Gather network connections
+          shell: |
+            netstat -tulpn > {{ logs_dir }}/netstat_{{ item }}.txt
+            ss -tulpn > {{ logs_dir }}/ss_{{ item }}.txt
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          when: affected_systems | length > 0
+          become: yes
+          ignore_errors: yes
+
+        - name: Collect running processes
+          shell: |
+            ps auxf > {{ logs_dir }}/processes_{{ item }}.txt
+            top -b -n1 > {{ logs_dir }}/top_{{ item }}.txt
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          when: affected_systems | length > 0
+          become: yes
+          ignore_errors: yes
+
+        - name: Analyze log files for indicators
+          shell: |
+            # Collect recent authentication logs
+            tail -1000 /var/log/auth.log > {{ logs_dir }}/auth_{{ item }}.txt 2>/dev/null || true
+            tail -1000 /var/log/secure > {{ logs_dir }}/secure_{{ item }}.txt 2>/dev/null || true
+
+            # Collect system logs
+            tail -1000 /var/log/syslog > {{ logs_dir }}/syslog_{{ item }}.txt 2>/dev/null || true
+            tail -1000 /var/log/messages > {{ logs_dir }}/messages_{{ item }}.txt 2>/dev/null || true
+
+            # Collect kernel logs
+            dmesg > {{ logs_dir }}/dmesg_{{ item }}.txt 2>/dev/null || true
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          when: affected_systems | length > 0
+          become: yes
+          ignore_errors: yes
+
+    # Phase 3: Containment
+    - name: Phase 3 - Containment
+      block:
+        - name: Implement network isolation (if required)
+          iptables:
+            chain: INPUT
+            jump: DROP
+            source: "0.0.0.0/0"
+            comment: "Emergency containment rule - Incident {{ incident_id }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          when:
+            - containment_required | bool
+            - severity in ['high', 'critical']
+            - affected_systems | length > 0
+          become: yes
+          notify: log_containment_action
+
+        - name: Create system memory dump (critical incidents)
+          shell: |
+            mkdir -p {{ evidence_dir }}/memory_dumps
+            # Create memory dump if LiME or similar tools are available
+            if command -v dump-memory >/dev/null 2>&1; then
+              dump-memory {{ evidence_dir }}/memory_dumps/{{ item }}_{{ ansible_date_time.epoch }}.mem
+            fi
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          when:
+            - evidence_collection | bool
+            - severity == 'critical'
+            - affected_systems | length > 0
+          become: yes
+          ignore_errors: yes
+
+        - name: Preserve file system evidence
+          shell: |
+            # Create timeline of recent file modifications
+            find /var /tmp /home -type f -mtime -1 -ls > {{ evidence_dir }}/recent_files_{{ item }}.txt 2>/dev/null || true
+
+            # Hash critical system files
+            md5sum /bin/* /sbin/* /usr/bin/* > {{ evidence_dir }}/system_hashes_{{ item }}.txt 2>/dev/null || true
+
+            # Collect browser history and downloads (if applicable)
+            find /home -name "*.sqlite" -path "*/.*" > {{ evidence_dir }}/browser_files_{{ item }}.txt 2>/dev/null || true
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          when:
+            - evidence_collection | bool
+            - affected_systems | length > 0
+          become: yes
+          ignore_errors: yes
+
+    # Phase 4: Eradication (Preparation)
+    - name: Phase 4 - Eradication Planning
+      block:
+        - name: Identify malicious processes (if malware incident)
+          shell: |
+            # Look for suspicious processes
+            ps aux | grep -E "(crypto|miner|bot|rat)" > {{ evidence_dir }}/suspicious_processes_{{ item }}.txt || true
+
+            # Check for unusual network connections
+            lsof -i | grep -v LISTEN > {{ evidence_dir }}/network_connections_{{ item }}.txt || true
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          when:
+            - incident_type == 'malware'
+            - affected_systems | length > 0
+          become: yes
+          ignore_errors: yes
+
+        - name: Scan for indicators of compromise
+          shell: |
+            # Check for known bad file hashes (simplified example)
+            echo "Scanning for IOCs..." > {{ evidence_dir }}/ioc_scan_{{ item }}.txt
+
+            # Check for persistence mechanisms
+            crontab -l > {{ evidence_dir }}/crontab_{{ item }}.txt 2>/dev/null || true
+            systemctl list-units --type=service --state=running > {{ evidence_dir }}/services_{{ item }}.txt || true
+
+            # Check startup files
+            ls -la /etc/init.d/ > {{ evidence_dir }}/init_scripts_{{ item }}.txt 2>/dev/null || true
+            ls -la /etc/systemd/system/ > {{ evidence_dir }}/systemd_services_{{ item }}.txt 2>/dev/null || true
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          when: affected_systems | length > 0
+          become: yes
+          ignore_errors: yes
+
+    # Phase 5: Recovery Planning
+    - name: Phase 5 - Recovery Preparation
+      block:
+        - name: Create system backup before recovery
+          shell: |
+            # Create configuration backup
+            tar -czf {{ evidence_dir }}/system_config_backup_{{ item }}_{{ ansible_date_time.epoch }}.tar.gz \
+              /etc/ /var/log/ 2>/dev/null || true
+          delegate_to: "{{ item }}"
+          loop: "{{ affected_systems }}"
+          when:
+            - severity in ['high', 'critical']
+            - affected_systems | length > 0
+          become: yes
+          ignore_errors: yes
+
+        - name: Prepare recovery checklist
+          copy:
+            content: |
+              RECOVERY CHECKLIST - Incident {{ incident_id }}
+              ============================================
+
+              Pre-Recovery Verification:
+              □ All evidence collected and preserved
+              □ Root cause identified
+              □ Threat actor activity ceased
+              □ System backups verified
+              □ Recovery procedures tested
+
+              Recovery Steps:
+              □ Remove malicious artifacts
+              □ Patch vulnerabilities
+              □ Update security controls
+              □ Restore from clean backups (if needed)
+              □ Verify system integrity
+              □ Update monitoring rules
+
+              Post-Recovery Validation:
+              □ System functionality verified
+              □ Security controls operational
+              □ Monitoring alerts configured
+              □ User access restored
+              □ Business operations resumed
+
+              Documentation:
+              □ Incident timeline documented
+              □ Lessons learned captured
+              □ Procedures updated
+              □ Training needs identified
+            dest: "{{ reports_dir }}/recovery_checklist.txt"
+            mode: '0640'
+          become: yes
+
+    # Phase 6: Lessons Learned
+    - name: Phase 6 - Documentation and Reporting
+      block:
+        - name: Generate incident summary report
+          template:
+            src: incident_report.j2
+            dest: "{{ reports_dir }}/incident_summary_{{ incident_id }}.txt"
+            mode: '0640'
+          vars:
+            report_data:
+              incident_id: "{{ incident_id }}"
+              incident_type: "{{ incident_type }}"
+              severity: "{{ severity }}"
+              detection_time: "{{ ansible_date_time.iso8601 }}"
+              affected_systems: "{{ affected_systems }}"
+              response_actions: "Evidence collection, containment measures applied"
+              status: "Under investigation"
+          become: yes
+
+        - name: Create incident metrics
+          copy:
+            content: |
+              INCIDENT METRICS - {{ incident_id }}
+              ==================================
+
+              Response Timeline:
+              - Detection: {{ ansible_date_time.iso8601 }}
+              - Response Initiated: {{ ansible_date_time.iso8601 }}
+              - Containment: In Progress
+              - Investigation: In Progress
+
+              Impact Assessment:
+              - Affected Systems: {{ affected_systems | length }}
+              - Data Exposure: Under Investigation
+              - Service Disruption: {{ 'Yes' if containment_required else 'No' }}
+
+              Response Effectiveness:
+              - Time to Response: < 5 minutes (automated)
+              - Evidence Preserved: Yes
+              - Containment Applied: {{ 'Yes' if containment_required else 'No' }}
+            dest: "{{ reports_dir }}/incident_metrics.txt"
+            mode: '0640'
+          become: yes
+
+        - name: Update incident status
+          copy:
+            content: |
+              INCIDENT STATUS UPDATE
+              =====================
+              Incident ID: {{ incident_id }}
+              Status: Initial Response Completed
+              Next Actions: Manual investigation and analysis required
+
+              Automated Response Summary:
+              - Evidence collection: Completed
+              - System information gathered: {{ affected_systems | length }} systems
+              - Containment measures: {{ 'Applied' if containment_required else 'Not required' }}
+              - Notifications sent: {{ 'Yes' if notification_required else 'No' }}
+
+              Manual Actions Required:
+              1. Review collected evidence in {{ evidence_dir }}
+              2. Analyze logs for indicators of compromise
+              3. Determine root cause and attack vector
+              4. Plan and execute eradication steps
+              5. Implement recovery procedures
+              6. Conduct lessons learned session
+
+              Next Update: Manual investigation findings
+            dest: "{{ incident_dir }}/status_update.txt"
+            mode: '0640'
+          become: yes
+
+  handlers:
+    - name: log_containment_action
+      copy:
+        content: |
+          CONTAINMENT ACTION APPLIED
+          =========================
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Incident: {{ incident_id }}
+          Action: Network isolation implemented
+          Systems: {{ affected_systems | join(', ') }}
+          Severity: {{ severity }}
+
+          CRITICAL: Systems have been isolated from network.
+          Manual intervention required to restore connectivity.
+        dest: "{{ incident_dir }}/containment_log.txt"
+        mode: '0640'
+      become: yes
+
+  post_tasks:
+    - name: Send completion notification
+      uri:
+        url: "{{ slack_webhook }}"
+        method: POST
+        body_format: json
+        body:
+          text: |
+            ✅ Initial incident response completed for {{ incident_id }}
+
+            Summary:
+            - Type: {{ incident_type }}
+            - Severity: {{ severity }}
+            - Systems Processed: {{ affected_systems | length }}
+            - Evidence Collected: {{ 'Yes' if evidence_collection else 'No' }}
+            - Containment Applied: {{ 'Yes' if containment_required else 'No' }}
+
+            Next: Manual investigation required
+            Details: {{ incident_dir }}
+        status_code: 200
+      when:
+        - notification_required | bool
+        - slack_webhook != ""
+      ignore_errors: yes
+
+    - name: Display incident response summary
+      debug:
+        msg: |
+          ========================================
+          INCIDENT RESPONSE SUMMARY
+          ========================================
+
+          Incident ID: {{ incident_id }}
+          Type: {{ incident_type }}
+          Severity: {{ severity }}
+
+          Automated Response Actions Completed:
+          ✓ Incident logging and tracking initiated
+          ✓ Stakeholder notifications sent
+          ✓ Evidence collection performed
+          ✓ System information gathered
+          {{ '✓ Containment measures applied' if containment_required else '- Containment not required' }}
+          ✓ Recovery planning prepared
+          ✓ Documentation and reporting completed
+
+          Incident Directory: {{ incident_dir }}
+          Evidence Location: {{ evidence_dir }}
+          Reports Location: {{ reports_dir }}
+
+          NEXT ACTIONS REQUIRED:
+          1. Review automated response results
+          2. Conduct manual investigation
+          3. Execute recovery procedures
+          4. Complete incident closure
+
+          ========================================
